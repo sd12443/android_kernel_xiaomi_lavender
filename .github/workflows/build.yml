@@ -15,9 +15,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev \
-                                  libncurses5-dev git clang lld libelf-dev
+                                  libncurses5-dev git clang lld libelf-dev make
 
-      - name: Clone Clang toolchain (ZyCromerZ, latest)
+      - name: Clone Clang toolchain (ZyCromerZ Clang 18)
         run: |
           git clone --depth=1 https://github.com/ZyCromerZ/Clang.git clang-18
 
@@ -38,12 +38,19 @@ jobs:
             ARCH=arm64 \
             SUBARCH=arm64 \
             CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            LD=ld.lld
+            CROSS_COMPILE=$CROSS_COMPILE \
+            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+            LD=$LD
 
       - name: Upload kernel image
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Image
           path: out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Upload RTL8821AU driver module (optional)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RTL8821AU-Module
+          path: out/drivers/net/wireless/rtl8821au/*.ko
