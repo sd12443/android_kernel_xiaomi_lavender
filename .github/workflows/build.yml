@@ -12,15 +12,19 @@ jobs:
 
       - name: Download aarch64-linux-gnu toolchain
         run: |
-          wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-          tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-          mv gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu gcc64
+          wget https://releases.linaro.org/components/toolchain/binaries/latest-10/aarch64-linux-gnu/gcc-linaro-10.3.1-2021.07-x86_64_aarch64-linux-gnu.tar.xz
+          tar -xf gcc-linaro-10.3.1-2021.07-x86_64_aarch64-linux-gnu.tar.xz
+          mv gcc-linaro-10.3.1-2021.07-x86_64_aarch64-linux-gnu gcc64
 
-      - name: Download arm-linux-androideabi toolchain
+      - name: Download arm-linux-gnueabi toolchain
         run: |
-          wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/arm-linux-androideabi/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
-          tar -xf gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
-          mv gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi gcc32
+          wget https://releases.linaro.org/components/toolchain/binaries/latest-10/arm-linux-gnueabi/gcc-linaro-10.3.1-2021.07-x86_64_arm-linux-gnueabi.tar.xz
+          tar -xf gcc-linaro-10.3.1-2021.07-x86_64_arm-linux-gnueabi.tar.xz
+          mv gcc-linaro-10.3.1-2021.07-x86_64_arm-linux-gnueabi gcc32
+          ln -s $PWD/gcc32/bin/arm-linux-gnueabi-gcc $PWD/gcc32/bin/arm-linux-androideabi-gcc
+          ln -s $PWD/gcc32/bin/arm-linux-gnueabi-g++ $PWD/gcc32/bin/arm-linux-androideabi-g++
+          ln -s $PWD/gcc32/bin/arm-linux-gnueabi-ar $PWD/gcc32/bin/arm-linux-androideabi-ar
+          ln -s $PWD/gcc32/bin/arm-linux-gnueabi-ld $PWD/gcc32/bin/arm-linux-androideabi-ld
 
       - name: Build Kernel
         run: |
