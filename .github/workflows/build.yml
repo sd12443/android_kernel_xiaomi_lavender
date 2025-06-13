@@ -19,14 +19,12 @@ jobs:
       - name: Build Kernel
         run: |
           export PATH=$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH
-          export CROSS_COMPILE=aarch64-elf-
+          export CROSS_COMPILE=aarch64-linux-android-
           export CROSS_COMPILE_ARM32=arm-eabi-
-          # Verify toolchains
-          ls -l $PWD/gcc64/bin/aarch64-elf-gcc
+          ls -l $PWD/gcc64/bin/aarch64-linux-android-gcc
           ls -l $PWD/gcc32/bin/arm-eabi-gcc
-          which aarch64-elf-gcc || echo "aarch64-elf-gcc not in PATH"
+          which aarch64-linux-android-gcc || echo "aarch64-linux-android-gcc not in PATH"
           which arm-eabi-gcc || echo "arm-eabi-gcc not in PATH"
-          # Build steps
           make ARCH=arm64 O=out lavender_defconfig
           make -j$(nproc) ARCH=arm64 O=out
 
