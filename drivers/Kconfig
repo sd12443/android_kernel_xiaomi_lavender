@@ -1,6 +1,6 @@
 menu "Device Drivers"
 
-source "drivers/aircrack/rtl8812au/Kconfig"
+# source "drivers/aircrack/rtl8812au/Kconfig"
 
 source "drivers/aircrack/rtl8188eus/Kconfig"
 
