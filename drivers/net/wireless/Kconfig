@@ -352,3 +352,4 @@ source "drivers/net/wireless/cnss_genl/Kconfig"
 source "drivers/net/wireless/cnss_utils/Kconfig"
 
 endif # WLAN
+source "drivers/net/wireless/rtl8821au/Kconfig"
