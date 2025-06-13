@@ -8,31 +8,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout kernel source
-      uses: actions/checkout@v4
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
 
-    - name: Install build dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev git clang
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev git clang
 
-    - name: Clone Clang toolchain (ZyCromerZ, latest)
-      run: |
-        git clone --depth=1 https://github.com/ZyCromerZ/Clang.git clang-18
+      - name: Clone Clang toolchain (ZyCromerZ, latest)
+        run: |
+          git clone --depth=1 https://github.com/ZyCromerZ/Clang.git clang-18
 
-    - name: Build kernel
-      env:
-        PATH: ${{ github.workspace }}/clang-18/bin:${PATH}
-        ARCH: arm64
-        SUBARCH: arm64
-      run: |
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CC=clang
-        make lavender_defconfig
-        make -j$(nproc)
+      - name: Build kernel
+        env:
+          PATH: ${{ github.workspace }}/clang-18/bin:${PATH}
+          ARCH: arm64
+          SUBARCH: arm64
+        run: |
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CC=clang
+          make lavender_defconfig
+          make -j$(nproc)
 
-    - name: Upload kernel image
-      uses: actions/upload-artifact@v4
-      with:
-        name: Kernel-Image
-        path: arch/arm64/boot/Image.gz-dtb
+      - name: Upload kernel image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Image
+          path: arch/arm64/boot/Image.gz-dtb
