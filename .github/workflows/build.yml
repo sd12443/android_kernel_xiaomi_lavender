@@ -12,13 +12,13 @@ jobs:
 
       - name: Download aarch64-linux-gnu toolchain
         run: |
-          wget https://releases.linaro.org/archive/7.5-2019.12/components/toolchain/binaries/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+          wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           mv gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu gcc64
 
       - name: Download arm-linux-androideabi toolchain
         run: |
-          wget https://releases.linaro.org/archive/7.5-2019.12/components/toolchain/binaries/arm-linux-androideabi/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
+          wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/arm-linux-androideabi/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
           mv gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi gcc32
 
