@@ -10,24 +10,29 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v2
 
-      - name: Clone GCC Toolchains
+      - name: Download aarch64-linux-gnu toolchain
         run: |
-          git clone --depth=1 https://github.com/arter97/arm64-gcc.git gcc64
-          git clone --depth=1 https://github.com/arter97/arm32-gcc.git gcc32
+          wget https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+          tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+          mv gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu gcc64
+
+      - name: Download arm-linux-androideabi toolchain
+        run: |
+          wget https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-linux-androideabi/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
+          tar -xf gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi.tar.xz
+          mv gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-androideabi gcc32
 
       - name: Build Kernel
         run: |
           export PATH=$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-androideabi-
-          
-          which aarch64-linux-gnu-gcc || echo "64-bit GCC not found"
-          which arm-linux-androideabi-gcc || echo "32-bit GCC not found"
-
+          ls $PWD/gcc64/bin/aarch64-linux-gnu-gcc
+          ls $PWD/gcc32/bin/arm-linux-androideabi-gcc
+          which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not in PATH"
+          which arm-linux-androideabi-gcc || echo "arm-linux-androideabi-gcc not in PATH"
           make ARCH=arm64 O=out lavender_defconfig
-          make -j$(nproc) ARCH=arm64 O=out \
-            CROSS_COMPILE=$CROSS_COMPILE \
-            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
+          make -j$(nproc) ARCH=arm64 O=out
 
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
