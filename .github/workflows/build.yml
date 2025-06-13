@@ -14,7 +14,8 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev git clang
+          sudo apt-get install -y build-essential bc bison flex libssl-dev \
+                                  libncurses5-dev git clang lld libelf-dev
 
       - name: Clone Clang toolchain (ZyCromerZ, latest)
         run: |
@@ -22,17 +23,27 @@ jobs:
 
       - name: Build kernel
         env:
-          PATH: ${{ github.workspace }}/clang-18/bin:${PATH}
+          PATH: ${{ github.workspace }}/clang-18/bin:${{ env.PATH }}
           ARCH: arm64
           SUBARCH: arm64
         run: |
           export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export LD=ld.lld
           export CC=clang
-          make lavender_defconfig
-          make -j$(nproc)
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+
+          make O=out lavender_defconfig
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LD=ld.lld
 
       - name: Upload kernel image
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Image
-          path: arch/arm64/boot/Image.gz-dtb
+          path: out/arch/arm64/boot/Image.gz-dtb
