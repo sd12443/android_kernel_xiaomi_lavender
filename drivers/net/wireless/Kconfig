@@ -17,6 +17,7 @@ menuconfig WLAN
 
 if WLAN
 
+
 config PCMCIA_RAYCS
 	tristate "Aviator/Raytheon 2.4GHz wireless support"
 	depends on PCMCIA
