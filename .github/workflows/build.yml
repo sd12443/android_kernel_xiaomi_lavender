@@ -16,9 +16,9 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y bc bison flex libssl-dev make libncurses5-dev git gcc clang
 
-    - name: Clone Clang 18 toolchain (ZyCromerZ mirror)
+    - name: Clone Clang 18 toolchain from ZyCromerZ (tag 18.1.7)
       run: |
-        git clone --depth=1 https://github.com/ZyCromerZ/Clang.git -b 18 clang-18
+        git clone --depth=1 --branch 18.1.7 https://github.com/ZyCromerZ/Clang.git clang-18
 
     - name: Build kernel
       env:
