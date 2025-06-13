@@ -20,14 +20,19 @@ jobs:
       run: |
         git clone --depth=1 https://github.com/ZyCromerZ/Clang.git clang-18
 
+    - name: Verify tools
+      run: |
+        command -v make
+        make --version
+        command -v gcc
+        gcc --version
+
     - name: Build kernel
       env:
         PATH: ${{ github.workspace }}/clang-18/bin:${PATH}
         ARCH: arm64
         SUBARCH: arm64
       run: |
-        which make
-        make --version
         export CROSS_COMPILE=aarch64-linux-gnu-
         export CC=clang
         make lavender_defconfig
