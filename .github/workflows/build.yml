@@ -23,7 +23,8 @@ jobs:
           make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=out
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: kernel-out
-          path: out/arch/arm64/boot/
+          path: |
+            out/arch/arm64/boot/
