@@ -11,10 +11,10 @@ jobs:
     - name: Checkout kernel source
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev git gcc clang
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev git clang
 
     - name: Clone Clang toolchain (ZyCromerZ, latest)
       run: |
@@ -26,6 +26,8 @@ jobs:
         ARCH: arm64
         SUBARCH: arm64
       run: |
+        which make
+        make --version
         export CROSS_COMPILE=aarch64-linux-gnu-
         export CC=clang
         make lavender_defconfig
