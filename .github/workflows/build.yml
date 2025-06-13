@@ -1,7 +1,7 @@
 name: Build Kernel
 
 on:
-  workflow_dispatch: # Manually trigger build from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,12 +13,12 @@ jobs:
 
     - name: Install dependencies
       run: |
-        sudo apt update
-        sudo apt install -y bc bison flex libssl-dev make libncurses5-dev gcc clang git
+        sudo apt-get update
+        sudo apt-get install -y bc bison flex libssl-dev make libncurses5-dev git gcc clang
 
-    - name: Clone Clang toolchain
+    - name: Clone Clang 18 toolchain (ZyCromerZ mirror)
       run: |
-        git clone --depth=1 https://github.com/arter97/clang-18.git clang-18
+        git clone --depth=1 https://github.com/ZyCromerZ/Clang.git -b 18 clang-18
 
     - name: Build kernel
       env:
