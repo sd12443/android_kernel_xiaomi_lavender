@@ -1,9 +1,0 @@
-config RTL8821AU
-    tristate "Realtek RTL8821AU USB WiFi Adapter"
-    depends on USB
-    select WIRELESS_EXT
-    help
-      Say Y or M to build the Realtek RTL8821AU driver for USB WiFi adapters.
-
-
-
