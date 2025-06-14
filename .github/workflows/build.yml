@@ -37,12 +37,12 @@ jobs:
           # Load default defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Disable GPU/DRM subsystems that break linking
+           Disable GPU/DRM subsystems that break linking
           for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD DRM_RCAR FB CFB_FILLRECT FRAMEBUFFER_CONSOLE; do
             scripts/config --file out/.config -d $cfg
           done
 
-          # Disable virtualization and audio (also fail linking)
+           Disable virtualization and audio (also fail linking)
           for cfg in VIRT VIRTIO SOUND SND SND_SOC SND_USB_AUDIO; do
             scripts/config --file out/.config -d $cfg
           done
