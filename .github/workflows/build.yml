@@ -9,7 +9,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout Kernel Headers
+      - name: Attempt Repository Checkout
+        id: checkout
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: sd12443/android_kernel_xiaomi_lavender
@@ -20,34 +22,65 @@ jobs:
             arch/arm64/include/
             scripts/
             Makefile
-            Module.symvers
 
-      - name: Install Build Dependencies
+      - name: Fallback - Download Kernel Headers Archive
+        if: steps.checkout.outcome == 'failure'
+        run: |
+          echo "Git checkout failed, downloading headers directly..."
+          mkdir -p kernel-headers
+          cd kernel-headers
+          
+          # Download specific header files needed for driver compilation
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/module.h -P include/linux/
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/kernel.h -P include/linux/
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/arch/arm64/include/asm/barrier.h -P arch/arm64/include/asm/
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/Makefile
+          
+          # Create minimal necessary directory structure
+          mkdir -p include/linux include/asm-generic include/uapi/linux
+          touch include/linux/compiler_types.h include/linux/compiler-gcc.h
+          touch include/asm-generic/barrier.h
+          touch include/uapi/linux/types.h
+
+      - name: Verify Kernel Headers
+        run: |
+          if [ ! -f "kernel-headers/include/linux/module.h" ]; then
+            echo "::error::Kernel headers verification failed!"
+            exit 1
+          fi
+          echo "Kernel headers verified"
+
+      - name: Install Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc libssl-dev \
                                   git clang lld libelf-dev make zip \
-                                  python2 python3 rsync wget
+                                  wget
 
-      - name: Download Prebuilt Clang
+      - name: Setup Android Clang Toolchain
         run: |
           mkdir -p toolchain
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r450784d.tar.gz -O clang.tar.gz
-          tar -xzf clang.tar.gz -C toolchain
-          rm clang.tar.gz
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r450784d.tar.gz
+          tar -xzf clang-r450784d.tar.gz -C toolchain
+          rm clang-r450784d.tar.gz
           echo "CLANG_PATH=$(pwd)/toolchain/bin" >> $GITHUB_ENV
 
       - name: Build RTL8821AU Driver
         run: |
-          # Clone driver source
-          git clone https://github.com/aircrack-ng/rtl8812au.git
+          # Clone driver with retry
+          for i in {1..3}; do
+            git clone https://github.com/aircrack-ng/rtl8812au.git && break || sleep 10
+          done
+          
           cd rtl8812au
           
-          # Build against kernel headers
+          # Simple Makefile patch for header-only build
+          sed -i 's/KERNEL_SRC =.*/KERNEL_SRC = $(shell pwd)\/..\/kernel-headers/' Makefile
+          sed -i 's/KERNEL_BUILD =.*/KERNEL_BUILD = $(KERNEL_SRC)/' Makefile
+          
           make ARCH=arm64 \
-               KSRC=$GITHUB_WORKSPACE/kernel-headers \
-               CC=clang \
-               LD=ld.lld \
+               CC=$CLANG_PATH/clang \
+               LD=$CLANG_PATH/ld.lld \
                CROSS_COMPILE=aarch64-linux-gnu- \
                CONFIG_RTL8812AU=m
 
@@ -55,20 +88,24 @@ jobs:
         run: |
           mkdir -p magisk-module/{system/lib/modules,META-INF/com/google/android}
           
-          # Copy compiled driver
+          # Verify driver exists
+          if [ ! -f "rtl8812au/8812au.ko" ]; then
+            echo "::error::Driver compilation failed - no output file!"
+            exit 1
+          fi
+          
           cp rtl8812au/8812au.ko magisk-module/system/lib/modules/
           
-          # Create module.prop
+          # Create minimal Magisk module files
           cat > magisk-module/module.prop <<EOF
           id=rtl8821au
-          name=RTL8821AU Driver
+          name=RTL8821AU WiFi Driver
           version=v1.0
           versionCode=$(date +%Y%m%d)
-          author=Auto-built
-          description=Magisk module for RTL8821AU WiFi driver
+          author=GitHub Actions
+          description=Magisk module for RTL8821AU driver
           EOF
           
-          # Create loading script
           cat > magisk-module/post-fs-data.sh <<EOF
           #!/system/bin/sh
           MODDIR=\${0%/*}
@@ -76,12 +113,11 @@ jobs:
           EOF
           chmod +x magisk-module/post-fs-data.sh
           
-          # Create Magisk install scripts
+          # Create update scripts
+          mkdir -p magisk-module/META-INF/com/google/android
           echo "#MAGISK" > magisk-module/META-INF/com/google/android/update-binary
-          cat > magisk-module/META-INF/com/google/android/updater-script <<EOF
-          ui_print("Installing RTL8821AU Driver");
-          set_perm_recursive(\$MODPATH/system/lib/modules 0 0 0755 0644);
-          EOF
+          echo 'ui_print("Installing RTL8821AU Driver");' > magisk-module/META-INF/com/google/android/updater-script
+          echo 'set_perm_recursive($MODPATH/system/lib/modules 0 0 0755 0644);' >> magisk-module/META-INF/com/google/android/updater-script
           
           # Package module
           cd magisk-module
@@ -93,14 +129,15 @@ jobs:
           name: RTL8821AU-Magisk-Module
           path: RTL8821AU-Magisk.zip
 
-      - name: Create GitHub Release
+      - name: Create Release
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: RTL8821AU-Magisk.zip
           tag_name: rtl8821au-$(date +%Y%m%d)
           name: RTL8821AU Driver $(date +%Y-%m-%d)
-          body: |-
-            Auto-built RTL8821AU Magisk Module
-            Built on: $(date)
+          body: |
+            Flashable Magisk module for RTL8821AU WiFi driver
+            Built: $(date)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
