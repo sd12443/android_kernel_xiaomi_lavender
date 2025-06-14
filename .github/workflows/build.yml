@@ -9,42 +9,60 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Checkout kernel source (with retry)
+      - name: Attempt Git Checkout (Primary Method)
+        id: git-checkout
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: sd12443/android_kernel_xiaomi_lavender
           ref: master
-          retries: 3
-          retry-wait-time: 20
+          path: kernel-source
+          fetch-depth: 1
 
-      - name: Install build dependencies
+      - name: Fallback - Download Source Archive
+        if: steps.git-checkout.outcome == 'failure'
+        run: |
+          echo "Git checkout failed, trying archive download..."
+          mkdir -p kernel-source
+          cd kernel-source
+          wget https://github.com/sd12443/android_kernel_xiaomi_lavender/archive/refs/heads/master.zip -O source.zip
+          unzip source.zip
+          mv android_kernel_xiaomi_lavender-master/* .
+          rm -rf android_kernel_xiaomi_lavender-master source.zip
+          echo "SOURCE_DIR=$(pwd)" >> $GITHUB_ENV
+
+      - name: Verify Source
+        run: |
+          if [ ! -f "kernel-source/Makefile" ]; then
+            echo "::error::Kernel source verification failed!"
+            exit 1
+          fi
+          echo "Kernel source verified successfully"
+
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev \
                                   libncurses5-dev git clang lld libelf-dev make zip \
-                                  python2 python3 rsync wget
+                                  python2 python3 rsync wget unzip
 
-      - name: Download Proton Clang (fallback method)
+      - name: Setup Toolchain (Proton Clang)
         run: |
-          if ! git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18; then
-            echo "Git clone failed, using wget fallback..."
+          mkdir -p toolchain
+          cd toolchain
+          if ! git clone --depth=1 https://github.com/kdrag0n/proton-clang.git; then
+            echo "Git clone failed, using direct download..."
             wget https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.zip -O clang.zip
             unzip clang.zip
-            mv proton-clang-master clang-18
+            mv proton-clang-master proton-clang
             rm clang.zip
           fi
+          echo "TOOLCHAIN_PATH=$(pwd)/proton-clang/bin" >> $GITHUB_ENV
 
-      - name: Verify source tree
+      - name: Build Kernel
+        working-directory: ./kernel-source
         run: |
-          if [ ! -f "Makefile" ]; then
-            echo "Error: Kernel source checkout failed!"
-            exit 1
-          fi
-
-      - name: Build kernel
-        run: |
-          export CLANG_PATH=$PWD/clang-18/bin
-          export PATH=$CLANG_PATH:$PATH
+          export PATH=$TOOLCHAIN_PATH:$PATH
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
@@ -53,65 +71,37 @@ jobs:
           export LD=ld.lld
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Clean and prepare
-          rm -rf out
           mkdir -p out
+          make O=out lavender_defconfig
           
-          # Configure kernel
-          make ARCH=$ARCH O=out lavender_defconfig || exit 1
-          scripts/config --file out/.config -m RTL8821AU -m CFG80211 -m MAC80211 || exit 1
-          make ARCH=$ARCH O=out olddefconfig || exit 1
+          # Enable required modules
+          ./scripts/config --file out/.config \
+            -m RTL8821AU \
+            -m CFG80211 \
+            -m MAC80211 \
+            -m USB_SUPPORT \
+            -m USB
           
-          # Build kernel with error handling
-          if ! make -j$(nproc --all) ARCH=$ARCH O=out; then
-            echo "Build failed, trying with single thread..."
-            make ARCH=$ARCH O=out || exit 1
-          fi
+          make -j$(nproc --all) O=out || make O=out
 
-      - name: Build RTL8821AU driver (with fallback)
+      - name: Build RTL8821AU Driver
         run: |
-          export CLANG_PATH=$PWD/clang-18/bin
-          export PATH=$CLANG_PATH:$PATH
-          export ARCH=arm64
-          export KERNEL_SRC=$PWD
-          export KERNEL_PATH=$PWD/out
-          
-          # Clone driver with retry
-          for i in {1..3}; do
-            if git clone https://github.com/aircrack-ng/rtl8812au.git; then
-              break
-            elif [ $i -eq 3 ]; then
-              exit 1
-            else
-              sleep 10
-            fi
-          done
-          
+          git clone https://github.com/aircrack-ng/rtl8812au.git
           cd rtl8812au
-          
-          # Build with error handling
-          if ! make -j$(nproc --all) ARCH=$ARCH KSRC=$KERNEL_SRC KERNEL_DIR=$KERNEL_PATH CONFIG_RTL8812AU=m; then
-            echo "Parallel build failed, trying single thread..."
-            make ARCH=$ARCH KSRC=$KERNEL_SRC KERNEL_DIR=$KERNEL_PATH CONFIG_RTL8812AU=m || exit 1
-          fi
+          make ARCH=arm64 \
+               KSRC=$GITHUB_WORKSPACE/kernel-source \
+               KERNEL_DIR=$GITHUB_WORKSPACE/kernel-source/out \
+               CC=clang \
+               LD=ld.lld \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               CONFIG_RTL8812AU=m
 
       - name: Create Magisk Module
         run: |
-          set -e  # Exit immediately on error
+          mkdir -p magisk-module/{system/lib/modules,META-INF/com/google/android}
+          cp rtl8812au/8812au.ko magisk-module/system/lib/modules/
           
-          # Create module structure
-          mkdir -p magisk_module/system/lib/modules
-          mkdir -p magisk_module/META-INF/com/google/android
-          
-          if [ ! -f "rtl8812au/8812au.ko" ]; then
-            echo "Error: Driver not built!"
-            exit 1
-          fi
-          
-          cp rtl8812au/8812au.ko magisk_module/system/lib/modules/
-          
-          # Create module files
-          cat > magisk_module/module.prop <<EOF
+          cat > magisk-module/module.prop <<EOF
           id=rtl8821au
           name=RTL8821AU Driver
           version=v1.0
@@ -120,42 +110,37 @@ jobs:
           description=Magisk module for RTL8821AU WiFi driver
           EOF
           
-          cat > magisk_module/post-fs-data.sh <<EOF
+          cat > magisk-module/post-fs-data.sh <<EOF
           #!/system/bin/sh
           MODDIR=\${0%/*}
           insmod \$MODDIR/system/lib/modules/8812au.ko
           EOF
-          chmod +x magisk_module/post-fs-data.sh
+          chmod +x magisk-module/post-fs-data.sh
           
-          # Create update files
-          echo "#MAGISK" > magisk_module/META-INF/com/google/android/update-binary
-          cat > magisk_module/META-INF/com/google/android/updater-script <<EOF
-          ui_print("Installing RTL8821AU Driver");
-          set_perm_recursive(\$MODPATH/system/lib/modules 0 0 0755 0644);
-          EOF
+          echo "#MAGISK" > magisk-module/META-INF/com/google/android/update-binary
+          echo 'ui_print("Installing RTL8821AU Driver");' > magisk-module/META-INF/com/google/android/updater-script
+          echo 'set_perm_recursive($MODPATH/system/lib/modules 0 0 0755 0644);' >> magisk-module/META-INF/com/google/android/updater-script
           
-          # Zip the module
-          cd magisk_module
-          zip -r9 ../RTL8821AU-Magisk.zip * || exit 1
+          cd magisk-module
+          zip -r9 ../RTL8821AU-Magisk.zip *
 
-      - name: Upload artifacts
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Build-Artifacts
+          name: Build-Output
           path: |
-            out/arch/arm64/boot/Image.gz-dtb
+            kernel-source/out/arch/arm64/boot/Image.gz-dtb
             RTL8821AU-Magisk.zip
 
       - name: Create Release
-        if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: RTL8821AU-Magisk.zip
-          tag_name: magisk-module-$(date +%Y%m%d)
-          name: "RTL8821AU Magisk Module $(date +%Y-%m-%d)"
+          tag_name: rtl8821au-$(date +%Y%m%d-%H%M)
+          name: RTL8821AU Driver $(date +%Y-%m-%d)
           body: |-
-            Flashable Magisk module for RTL8821AU WiFi driver
-            Built on: $(date)
-            Kernel HEAD: $(git rev-parse --short HEAD)
+            Auto-built RTL8821AU Magisk Module
+            Build date: $(date)
+            Kernel commit: $(git -C kernel-source rev-parse --short HEAD)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
