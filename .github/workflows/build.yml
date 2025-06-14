@@ -33,24 +33,31 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           rm -f $CLANG_PATH/ld || true
 
+          # Load correct defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # ✅ Disable broken GPU/sound configs
+          # ❌ Disable broken or unneeded subsystems
           scripts/config --file out/.config -d DRM
           scripts/config --file out/.config -d DRM_KMS_HELPER
           scripts/config --file out/.config -d FB
           scripts/config --file out/.config -d SOUND
+          scripts/config --file out/.config -d SND
           scripts/config --file out/.config -d SND_SOC
+          scripts/config --file out/.config -d SND_USB_AUDIO
           scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
+          scripts/config --file out/.config -d HSI
+          scripts/config --file out/.config -d KERNEL_CONFIG_DATA
 
-          # ✅ Force WiFi and USB to be built as modules (modularization)
+          # ✅ Force WiFi and USB support as modules
           scripts/config --file out/.config -m RTL8821AU
           scripts/config --file out/.config -m USB_SUPPORT
           scripts/config --file out/.config -m WLAN
           scripts/config --file out/.config -m CFG80211
 
+          # Resolve config dependencies
           make ARCH=$ARCH O=out olddefconfig
 
+          # Compile
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
@@ -65,8 +72,6 @@ jobs:
 
           # Copy AnyKernel3 template
           cp -r .anykernel/* flashzip/
-
-          # Optional: Insert .ko logic into anykernel.sh if needed
           echo "Custom kernel with RTL8821AU" > flashzip/README.txt
 
           cd flashzip
