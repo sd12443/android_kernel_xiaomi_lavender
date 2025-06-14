@@ -23,29 +23,27 @@ jobs:
             scripts/
             Makefile
 
-      - name: Fallback - Download Kernel Headers Archive
+      - name: Fallback - Download Kernel Headers
         if: steps.checkout.outcome == 'failure'
         run: |
-          echo "Git checkout failed, downloading headers directly..."
-          mkdir -p kernel-headers
-          cd kernel-headers
+          echo "Git checkout failed, downloading essential headers..."
+          mkdir -p kernel-headers/include/linux kernel-headers/arch/arm64/include/asm
           
-          # Download specific header files needed for driver compilation
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/module.h -P include/linux/
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/kernel.h -P include/linux/
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/arch/arm64/include/asm/barrier.h -P arch/arm64/include/asm/
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/Makefile
+          # Download minimal required headers
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/module.h -P kernel-headers/include/linux/
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/kernel.h -P kernel-headers/include/linux/
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/arch/arm64/include/asm/barrier.h -P kernel-headers/arch/arm64/include/asm/
+          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/Makefile -P kernel-headers/
           
-          # Create minimal necessary directory structure
-          mkdir -p include/linux include/asm-generic include/uapi/linux
-          touch include/linux/compiler_types.h include/linux/compiler-gcc.h
-          touch include/asm-generic/barrier.h
-          touch include/uapi/linux/types.h
+          # Create placeholder files
+          touch kernel-headers/include/linux/compiler_types.h
+          touch kernel-headers/include/linux/compiler-gcc.h
+          touch kernel-headers/include/linux/types.h
 
       - name: Verify Kernel Headers
         run: |
           if [ ! -f "kernel-headers/include/linux/module.h" ]; then
-            echo "::error::Kernel headers verification failed!"
+            echo "::error::Essential kernel headers missing!"
             exit 1
           fi
           echo "Kernel headers verified"
@@ -57,13 +55,20 @@ jobs:
                                   git clang lld libelf-dev make zip \
                                   wget
 
-      - name: Setup Android Clang Toolchain
+      - name: Setup Proton Clang Toolchain
         run: |
-          mkdir -p toolchain
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r450784d.tar.gz
-          tar -xzf clang-r450784d.tar.gz -C toolchain
-          rm clang-r450784d.tar.gz
+          # Clone Proton Clang with retry
+          for i in {1..3}; do
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain && break || sleep 10
+          done
+          
+          if [ ! -d "toolchain/bin" ]; then
+            echo "::error::Toolchain setup failed!"
+            exit 1
+          fi
+          
           echo "CLANG_PATH=$(pwd)/toolchain/bin" >> $GITHUB_ENV
+          echo "PATH=$(pwd)/toolchain/bin:$PATH" >> $GITHUB_ENV
 
       - name: Build RTL8821AU Driver
         run: |
@@ -74,13 +79,13 @@ jobs:
           
           cd rtl8812au
           
-          # Simple Makefile patch for header-only build
-          sed -i 's/KERNEL_SRC =.*/KERNEL_SRC = $(shell pwd)\/..\/kernel-headers/' Makefile
-          sed -i 's/KERNEL_BUILD =.*/KERNEL_BUILD = $(KERNEL_SRC)/' Makefile
+          # Patch Makefile for header-only build
+          sed -i 's|^KERNEL_SRC =.*|KERNEL_SRC = $(shell pwd)/../kernel-headers|' Makefile
+          sed -i 's|^KERNEL_BUILD =.*|KERNEL_BUILD = $(KERNEL_SRC)|' Makefile
           
           make ARCH=arm64 \
-               CC=$CLANG_PATH/clang \
-               LD=$CLANG_PATH/ld.lld \
+               CC=clang \
+               LD=ld.lld \
                CROSS_COMPILE=aarch64-linux-gnu- \
                CONFIG_RTL8812AU=m
 
@@ -96,7 +101,7 @@ jobs:
           
           cp rtl8812au/8812au.ko magisk-module/system/lib/modules/
           
-          # Create minimal Magisk module files
+          # Create module files
           cat > magisk-module/module.prop <<EOF
           id=rtl8821au
           name=RTL8821AU WiFi Driver
@@ -114,10 +119,11 @@ jobs:
           chmod +x magisk-module/post-fs-data.sh
           
           # Create update scripts
-          mkdir -p magisk-module/META-INF/com/google/android
           echo "#MAGISK" > magisk-module/META-INF/com/google/android/update-binary
-          echo 'ui_print("Installing RTL8821AU Driver");' > magisk-module/META-INF/com/google/android/updater-script
-          echo 'set_perm_recursive($MODPATH/system/lib/modules 0 0 0755 0644);' >> magisk-module/META-INF/com/google/android/updater-script
+          cat > magisk-module/META-INF/com/google/android/updater-script <<EOF
+          ui_print("Installing RTL8821AU Driver");
+          set_perm_recursive(\$MODPATH/system/lib/modules 0 0 0755 0644);
+          EOF
           
           # Package module
           cd magisk-module
@@ -138,6 +144,7 @@ jobs:
           name: RTL8821AU Driver $(date +%Y-%m-%d)
           body: |
             Flashable Magisk module for RTL8821AU WiFi driver
-            Built: $(date)
+            Built with Proton Clang toolchain
+            Build date: $(date)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
