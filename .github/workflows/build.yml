@@ -31,10 +31,10 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
-          # Remove broken linker from toolchain
+           Remove broken linker from toolchain
           rm -f $CLANG_PATH/ld || true
 
-          # Load default defconfig
+           Load default defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
            Disable GPU/DRM subsystems that break linking
@@ -47,20 +47,20 @@ jobs:
             scripts/config --file out/.config -d $cfg
           done
 
-          # Disable misc build triggers
+           Disable misc build triggers
           for cfg in HSI IKCONFIG IKCONFIG_PROC KERNEL_CONFIG_DATA; do
             scripts/config --file out/.config -d $cfg
           done
 
-          # Enable RTL8821AU and WiFi stack as modules
+           Enable RTL8821AU and WiFi stack as modules
           for cfg in RTL8821AU USB_SUPPORT WLAN CFG80211; do
             scripts/config --file out/.config -m $cfg
           done
 
-          # Finalize config
+           Finalize config
           make ARCH=$ARCH O=out olddefconfig
 
-          # Build
+           Build
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
