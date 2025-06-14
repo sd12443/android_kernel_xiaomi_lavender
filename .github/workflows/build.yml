@@ -36,5 +36,60 @@ jobs:
           # Load correct defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # ✅ Disable KERNEL_CONFIG_DATA to avoid defconfig dependency error
-          scripts/config --file out/.config -d KERNEL
+          # ✅ Disable config that causes defconfig error
+          scripts/config --file out/.config -d KERNEL_CONFIG_DATA
+
+          # Disable broken/unwanted subsystems
+          scripts/config --file out/.config -d DRM
+          scripts/config --file out/.config -d DRM_KMS_HELPER
+          scripts/config --file out/.config -d FB
+          scripts/config --file out/.config -d SOUND
+          scripts/config --file out/.config -d SND
+          scripts/config --file out/.config -d SND_SOC
+          scripts/config --file out/.config -d SND_USB_AUDIO
+          scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
+          scripts/config --file out/.config -d HSI
+
+          # Ensure RTL8821AU + USB is modular
+          scripts/config --file out/.config -m RTL8821AU
+          scripts/config --file out/.config -m USB_SUPPORT
+          scripts/config --file out/.config -m WLAN
+          scripts/config --file out/.config -m CFG80211
+
+          # Apply updated config
+          make ARCH=$ARCH O=out olddefconfig
+
+          # Build kernel
+          make -j$(nproc) ARCH=$ARCH O=out \
+            CC=$CC \
+            CROSS_COMPILE=$CROSS_COMPILE \
+            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+            LD=ld.lld
+
+      - name: Package with AnyKernel3
+        run: |
+          mkdir -p flashzip
+          cp out/arch/arm64/boot/Image.gz-dtb flashzip/ || echo "Image not found"
+          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "Module not found"
+          cp -r .anykernel/* flashzip/ || echo "Anykernel folder missing"
+          echo "Custom kernel with RTL8821AU" > flashzip/README.txt
+          cd flashzip && zip -r9 ../Kernel-flashable.zip *
+
+      - name: Debug: List contents before upload
+        run: |
+          ls -lh Kernel-flashable.zip || echo "ZIP not created"
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flashable-Zip
+          path: Kernel-flashable.zip
+
+      - name: Upload to GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            Kernel-flashable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
