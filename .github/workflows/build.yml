@@ -71,22 +71,22 @@ jobs:
       - name: Package RTL8821AU as Magisk Module
         run: |
           mkdir -p magisk-module/system/lib/modules
-          cp out/drivers/net/wireless/rtl8821au/*.ko magisk-module/system/lib/modules/
+          cp out/drivers/net/wireless/rtl8821au/*.ko magisk-module/system/lib/modules/ || true
           echo "RTL8821AU Magisk module" > magisk-module/README.md
-          cat > magisk-module/module.prop <<EOF
-id=rtl8821au
-name=RTL8821AU WiFi Module
-version=1.0
-author=GitHub Actions
-description=Injects rtl8821au.ko into system
-EOF
-          cat > magisk-module/install.sh <<'EOF'
+          echo "id=rtl8821au" > magisk-module/module.prop
+          echo "name=RTL8821AU WiFi Module" >> magisk-module/module.prop
+          echo "version=1.0" >> magisk-module/module.prop
+          echo "author=GitHub Actions" >> magisk-module/module.prop
+          echo "description=Injects rtl8821au.ko into system" >> magisk-module/module.prop
+
+          cat <<'EOL' > magisk-module/install.sh
 #!/system/bin/sh
 MODDIR=${0%/*}
 mkdir -p /data/rtl8821au
 cp $MODDIR/system/lib/modules/*.ko /data/rtl8821au/
 chmod 644 /data/rtl8821au/*.ko
-EOF
+EOL
+
           chmod +x magisk-module/install.sh
           cd magisk-module && zip -r9 ../RTL8821AU-Magisk.zip *
 
