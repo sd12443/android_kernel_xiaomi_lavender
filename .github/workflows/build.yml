@@ -15,13 +15,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev \
-                                  libncurses5-dev git clang lld libelf-dev make
+                                  libncurses5-dev git clang lld libelf-dev make zip
 
       - name: Clone Proton Clang toolchain (recommended)
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18
 
-      - name: Build kernel
+      - name: Build kernel + RTL8821AU
         run: |
           export CLANG_PATH=$PWD/clang-18/bin
           export PATH=$CLANG_PATH:$PATH
@@ -31,47 +31,58 @@ jobs:
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
-
-          # ⛔ Remove conflicting linker from clang toolchain
           rm -f $CLANG_PATH/ld || true
 
-          # Load base config
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # ✅ Force-disable unused GPU/DRM configs to prevent ld.lld errors
+          # ✅ Disable broken GPU/sound configs
           scripts/config --file out/.config -d DRM
           scripts/config --file out/.config -d DRM_KMS_HELPER
           scripts/config --file out/.config -d FB
+          scripts/config --file out/.config -d SOUND
+          scripts/config --file out/.config -d SND_SOC
           scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
+
+          # ✅ Force WiFi and USB to be built as modules (modularization)
+          scripts/config --file out/.config -m RTL8821AU
+          scripts/config --file out/.config -m USB_SUPPORT
+          scripts/config --file out/.config -m WLAN
+          scripts/config --file out/.config -m CFG80211
 
           make ARCH=$ARCH O=out olddefconfig
 
-          # ✅ Build the kernel
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             LD=ld.lld
 
-      - name: Upload kernel image to Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kernel-Image
-          path: out/arch/arm64/boot/Image.gz-dtb
+      - name: Package with AnyKernel3
+        run: |
+          mkdir -p flashzip
+          cp out/arch/arm64/boot/Image.gz-dtb flashzip/
+          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/
 
-      - name: Upload RTL8821AU driver module to Actions
-        if: success()
+          # Copy AnyKernel3 template
+          cp -r .anykernel/* flashzip/
+
+          # Optional: Insert .ko logic into anykernel.sh if needed
+          echo "Custom kernel with RTL8821AU" > flashzip/README.txt
+
+          cd flashzip
+          zip -r9 ../Kernel-flashable.zip *
+
+      - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: RTL8821AU-Module
-          path: out/drivers/net/wireless/rtl8821au/*.ko
+          name: Flashable-Zip
+          path: Kernel-flashable.zip
 
       - name: Upload to GitHub Release
         if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            out/arch/arm64/boot/Image.gz-dtb
-            out/drivers/net/wireless/rtl8821au/*.ko
+            Kernel-flashable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
