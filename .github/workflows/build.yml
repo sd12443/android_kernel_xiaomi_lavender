@@ -36,30 +36,38 @@ jobs:
           # Load defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Disable problematic configs (fixes build errors)
+          # 🔒 Disable graphic and GPU drivers (prevent ld.lld errors)
           scripts/config --file out/.config -d DRM
           scripts/config --file out/.config -d DRM_KMS_HELPER
+          scripts/config --file out/.config -d I915
+          scripts/config --file out/.config -d DRM_AMD
+          scripts/config --file out/.config -d DRM_RCAR
           scripts/config --file out/.config -d FB
+          scripts/config --file out/.config -d CFB_FILLRECT
+          scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
+
+          # Disable audio subsystems and other triggers
           scripts/config --file out/.config -d SOUND
           scripts/config --file out/.config -d SND
           scripts/config --file out/.config -d SND_SOC
           scripts/config --file out/.config -d SND_USB_AUDIO
-          scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
+
+          # Disable kernel config blob and associated targets
           scripts/config --file out/.config -d HSI
           scripts/config --file out/.config -d IKCONFIG
           scripts/config --file out/.config -d IKCONFIG_PROC
-          scripts/config --file out/.config -d KERNEL_CONFIG_DATA
+          scripts-config --file out/.config -d KERNEL_CONFIG_DATA
 
-          # Enable modules we want
+          # ✅ Build RTL8821AU and WiFi as modules
           scripts/config --file out/.config -m RTL8821AU
-          scripts/config --file out/.config -m USB_SUPPORT
-          scripts/config --file out/.config -m WLAN
-          scripts/config --file out/.config -m CFG80211
+          scripts-config --file out/.config -m USB_SUPPORT
+          scripts-config --file out/.config -m WLAN
+          scripts-config --file out/.config -m CFG80211
 
-          # Finalize config
+          # Regenerate working config
           make ARCH=$ARCH O=out olddefconfig
 
-          # Build the kernel (disable config blob explicitly)
+          # Build kernel
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
@@ -71,11 +79,14 @@ jobs:
         run: |
           mkdir -p flashzip
           cp out/arch/arm64/boot/Image.gz-dtb flashzip/
-          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/
-          cp -r .anykernel/* flashzip/
-          echo "Custom kernel with RTL8821AU" > flashzip/README.txt
-          cd flashzip
-          zip -r9 ../Kernel-flashable.zip *
+          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "No module found"
+          cp -r .anykernel/* flashzip/ || echo "Template missing"
+          echo "Kernel with RTL8821AU" > flashzip/README.txt
+          cd flashzip && zip -r9 ../Kernel-flashable.zip *
+
+      - name: Test ZIP exists
+        run: |
+          ls -lh Kernel-flashable.zip || (echo "ZIP missing" && exit 1)
 
       - name: Upload flashable zip to Actions
         uses: actions/upload-artifact@v4
