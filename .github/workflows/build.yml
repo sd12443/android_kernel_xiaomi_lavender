@@ -1,4 +1,4 @@
-name: Build Kernel & RTL8821AU (Magisk)
+name: Build Kernel
 
 on:
   workflow_dispatch:
@@ -20,13 +20,13 @@ jobs:
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18
 
-      - name: Patch kernel Makefiles (remove broken subsystems)
+      - name: Patch kernel Makefiles (disable GPU, virt, sound)
         run: |
           sed -i '/^obj-y\s\+=\s\+virt/d' Makefile
           sed -i '/^obj-y\s\+=\s\+gpu/d' drivers/Makefile
           sed -i '/^obj-y\s\+=\s\+sound/d' drivers/Makefile
 
-      - name: Build kernel only (no WiFi)
+      - name: Build Kernel + RTL8821AU
         run: |
           export CLANG_PATH=$PWD/clang-18/bin
           export PATH=$CLANG_PATH:$PATH
@@ -35,16 +35,19 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
           rm -f $CLANG_PATH/ld || true
 
           make ARCH=$ARCH O=out lavender_defconfig
 
-          for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD DRM_RCAR FB \
-                     CFB_FILLRECT FRAMEBUFFER_CONSOLE \
-                     VIRT VIRTIO SOUND SND SND_SOC SND_USB_AUDIO \
-                     HSI IKCONFIG IKCONFIG_PROC KERNEL_CONFIG_DATA \
-                     MSM_KGSL MSM_KGSL_IOMMU RTL8821AU; do
+          for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD FB VIRT SOUND \
+                     SND_SOC SND_USB_AUDIO IKCONFIG IKCONFIG_PROC \
+                     KERNEL_CONFIG_DATA; do
             scripts/config --file out/.config -d $cfg
+          done
+
+          for cfg in RTL8821AU USB_SUPPORT WLAN CFG80211; do
+            scripts/config --file out/.config -m $cfg
           done
 
           make ARCH=$ARCH O=out olddefconfig
@@ -55,55 +58,46 @@ jobs:
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             LD=ld.lld
 
-      - name: Package Kernel (AnyKernel3)
+      - name: Package Kernel Image (AnyKernel3 ZIP)
         run: |
           mkdir -p flashzip
-          cp out/arch/arm64/boot/Image.gz-dtb flashzip/ || exit 1
+          cp out/arch/arm64/boot/Image.gz-dtb flashzip/
           cp -r .anykernel/* flashzip/
-          echo "Minimal kernel (no built-in RTL8821AU)" > flashzip/README.txt
-          cd flashzip && zip -r9 ../Kernel-Minimal.zip *
+          echo "Vanilla kernel (no extra modules)" > flashzip/README.txt
+          cd flashzip && zip -r9 ../Kernel-Only.zip *
 
-      - name: Upload Kernel ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: Minimal-Kernel-Zip
-          path: Kernel-Minimal.zip
-
-      - name: Build RTL8821AU module separately
-        run: |
-          # Prepare environment
-          export CLANG_PATH=$PWD/clang-18/bin
-          export PATH=$CLANG_PATH:$PATH
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CC=clang
-
-          # Assume driver is in drivers/net/wireless/rtl8821au/
-          make -C out M=$(pwd)/drivers/net/wireless/rtl8821au modules
-
-      - name: Package Magisk module
+      - name: Package RTL8821AU as Magisk Module
         run: |
           mkdir -p magisk-module/system/lib/modules
-          cp drivers/net/wireless/rtl8821au/*.ko magisk-module/system/lib/modules/
-
-          cat <<EOF > magisk-module/module.prop
-id=rtl8821au-driver
-name=RTL8821AU USB WiFi
+          cp out/drivers/net/wireless/rtl8821au/*.ko magisk-module/system/lib/modules/
+          echo "RTL8821AU Magisk module" > magisk-module/README.md
+          cat > magisk-module/module.prop <<EOF
+id=rtl8821au
+name=RTL8821AU WiFi Module
 version=1.0
-author=KernelBuilder
-description=External WiFi driver for Realtek 8821AU (Magisk)
+author=GitHub Actions
+description=Injects rtl8821au.ko into system
 EOF
+          cat > magisk-module/install.sh <<'EOF'
+#!/system/bin/sh
+MODDIR=${0%/*}
+mkdir -p /data/rtl8821au
+cp $MODDIR/system/lib/modules/*.ko /data/rtl8821au/
+chmod 644 /data/rtl8821au/*.ko
+EOF
+          chmod +x magisk-module/install.sh
+          cd magisk-module && zip -r9 ../RTL8821AU-Magisk.zip *
 
-          echo "#!/system/bin/sh" > magisk-module/post-fs-data.sh
-          chmod +x magisk-module/post-fs-data.sh
-
-          cd magisk-module
-          zip -r9 ../RTL8821AU-Magisk.zip *
-
-      - name: Upload Magisk module
+      - name: Upload Kernel Image (Actions)
         uses: actions/upload-artifact@v4
         with:
-          name: RTL8821AU-Magisk-Module
+          name: Kernel-Only
+          path: Kernel-Only.zip
+
+      - name: Upload RTL8821AU Magisk Module
+        uses: actions/upload-artifact@v4
+        with:
+          name: RTL8821AU-Magisk
           path: RTL8821AU-Magisk.zip
 
       - name: Upload to GitHub Release
@@ -111,7 +105,7 @@ EOF
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            Kernel-Minimal.zip
+            Kernel-Only.zip
             RTL8821AU-Magisk.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
