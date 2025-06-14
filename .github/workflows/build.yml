@@ -20,7 +20,7 @@ jobs:
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18
 
-      - name: Patch kernel Makefiles (disable GPU, virt, sound)
+      - name: Patch kernel Makefiles
         run: |
           sed -i '/^obj-y\s\+=\s\+virt/d' Makefile
           sed -i '/^obj-y\s\+=\s\+gpu/d' drivers/Makefile
@@ -40,9 +40,11 @@ jobs:
 
           make ARCH=$ARCH O=out lavender_defconfig
 
-          for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD FB VIRT SOUND \
-                     SND_SOC SND_USB_AUDIO IKCONFIG IKCONFIG_PROC \
-                     KERNEL_CONFIG_DATA; do
+          for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD DRM_RCAR FB \
+                     CFB_FILLRECT FRAMEBUFFER_CONSOLE \
+                     VIRT VIRTIO SOUND SND SND_SOC SND_USB_AUDIO \
+                     HSI IKCONFIG IKCONFIG_PROC KERNEL_CONFIG_DATA \
+                     MSM_KGSL MSM_KGSL_IOMMU; do
             scripts/config --file out/.config -d $cfg
           done
 
@@ -88,13 +90,13 @@ EOF
           chmod +x magisk-module/install.sh
           cd magisk-module && zip -r9 ../RTL8821AU-Magisk.zip *
 
-      - name: Upload Kernel Image (Actions)
+      - name: Upload Kernel ZIP
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Only
           path: Kernel-Only.zip
 
-      - name: Upload RTL8821AU Magisk Module
+      - name: Upload Magisk Module
         uses: actions/upload-artifact@v4
         with:
           name: RTL8821AU-Magisk
