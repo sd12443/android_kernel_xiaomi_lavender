@@ -97,6 +97,12 @@ EOL
           name: RTL8821AU-Magisk
           path: RTL8821AU-Magisk.zip
 
+      - name: Upload RTL8821AU Kernel Module (for inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl8821au-ko
+          path: out/drivers/net/wireless/rtl8821au/*.ko
+
       - name: Upload to GitHub Release
         if: success()
         uses: softprops/action-gh-release@v1
