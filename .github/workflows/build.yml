@@ -31,10 +31,10 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
-          # Load default config
+          # Load defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Build kernel with scoped LD to avoid linker conflict
+          # Build with scoped LD to avoid glibc conflict
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
