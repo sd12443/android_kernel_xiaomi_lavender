@@ -35,10 +35,18 @@ jobs:
           # ⛔ Remove conflicting linker from clang toolchain
           rm -f $CLANG_PATH/ld || true
 
-          # Load defconfig
+          # Load base config
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Build kernel
+          # ✅ Force-disable unused GPU/DRM configs to prevent ld.lld errors
+          scripts/config --file out/.config -d DRM
+          scripts/config --file out/.config -d DRM_KMS_HELPER
+          scripts/config --file out/.config -d FB
+          scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
+
+          make ARCH=$ARCH O=out olddefconfig
+
+          # ✅ Build the kernel
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
