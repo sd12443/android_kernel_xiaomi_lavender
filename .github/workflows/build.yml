@@ -30,39 +30,39 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-
           rm -f $CLANG_PATH/ld || true
 
-          # Load defconfig
+          # Load the defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Disable unnecessary/broken subsystems
-          scripts/config --file out/.config -d DRM
-          scripts/config --file out/.config -d DRM_KMS_HELPER
-          scripts/config --file out/.config -d I915
-          scripts/config --file out/.config -d FB
-          scripts/config --file out/.config -d CFB_FILLRECT
-          scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
-          scripts/config --file out/.config -d SOUND
-          scripts/config --file out/.config -d SND
-          scripts/config --file out/.config -d SND_SOC
-          scripts/config --file out/.config -d SND_USB_AUDIO
-          scripts/config --file out/.config -d HSI
-          scripts/config --file out/.config -d IKCONFIG
-          scripts/config --file out/.config -d IKCONFIG_PROC
-          scripts/config --file out/.config -d KERNEL_CONFIG_DATA
+          # Disable broken GPU/DRM/graphics subsystems
+          for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD DRM_RCAR FB CFB_FILLRECT FRAMEBUFFER_CONSOLE; do
+            scripts/config --file out/.config -d $cfg
+          done
 
-          # Enable desired modules
-          scripts/config --file out/.config -m RTL8821AU
-          scripts/config --file out/.config -m USB_SUPPORT
-          scripts/config --file out/.config -m WLAN
-          scripts/config --file out/.config -m CFG80211
+          # Disable virtualization to avoid ld errors
+          scripts/config --file out/.config -d VIRT
+          scripts/config --file out/.config -d VIRTIO
 
-          # Finalize config
+          # Disable audio and related systems
+          for cfg in SOUND SND SND_SOC SND_USB_AUDIO; do
+            scripts/config --file out/.config -d $cfg
+          done
+
+          # Disable kernel config blob and Kconfig targets
+          for cfg in HSI IKCONFIG IKCONFIG_PROC KERNEL_CONFIG_DATA; do
+            scripts/config --file out/.config -d $cfg
+          done
+
+          # Enable RTL8821AU and WiFi as kernel modules
+          for cfg in RTL8821AU USB_SUPPORT WLAN CFG80211; do
+            scripts/config --file out/.config -m $cfg
+          done
+
+          # Regenerate updated config
           make ARCH=$ARCH O=out olddefconfig
 
-          # Compile kernel
+          # Build the kernel
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
@@ -74,15 +74,16 @@ jobs:
         run: |
           mkdir -p flashzip
           cp out/arch/arm64/boot/Image.gz-dtb flashzip/ || exit 1
-          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "No .ko found, skipping"
-          cp -r .anykernel/* flashzip/ || echo "No AnyKernel3 template found"
-          echo "Built kernel with RTL8821AU" > flashzip/README.txt
+          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "No module found"
+          cp -r .anykernel/* flashzip/ || echo "No AnyKernel3 template"
+          echo "Kernel with RTL8821AU" > flashzip/README.txt
           cd flashzip && zip -r9 ../Kernel-flashable.zip *
 
       - name: Verify Kernel Package
-        run: ls -lh Kernel-flashable.zip
+        run: |
+          ls -lh Kernel-flashable.zip || exit 1
 
-      - name: Upload flashable ZIP (Actions Artifacts)
+      - name: Upload flashable ZIP (Actions Artifact)
         uses: actions/upload-artifact@v4
         with:
           name: Flashable-Kernel-Zip
@@ -95,4 +96,3 @@ jobs:
           files: Kernel-flashable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
