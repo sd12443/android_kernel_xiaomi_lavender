@@ -32,28 +32,38 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
-          # Fix Proton Clang's broken ld for host tools
+          # ⛔ Remove conflicting linker from clang toolchain
           rm -f $CLANG_PATH/ld || true
 
           # Load defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Build the kernel
+          # Build kernel
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             LD=ld.lld
 
-      - name: Upload kernel image
+      - name: Upload kernel image to Actions
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Image
           path: out/arch/arm64/boot/Image.gz-dtb
 
-      - name: Upload RTL8821AU driver module
+      - name: Upload RTL8821AU driver module to Actions
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: RTL8821AU-Module
           path: out/drivers/net/wireless/rtl8821au/*.ko
+
+      - name: Upload to GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            out/arch/arm64/boot/Image.gz-dtb
+            out/drivers/net/wireless/rtl8821au/*.ko
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
