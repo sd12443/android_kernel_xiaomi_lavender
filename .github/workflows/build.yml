@@ -75,7 +75,8 @@ jobs:
           echo "Custom kernel with RTL8821AU" > flashzip/README.txt
           cd flashzip && zip -r9 ../Kernel-flashable.zip *
 
-      - name: Debug: List contents before upload
+      - name: "Debug: List contents before upload"
+
         run: |
           ls -lh Kernel-flashable.zip || echo "ZIP not created"
 
