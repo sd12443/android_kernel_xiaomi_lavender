@@ -17,9 +17,9 @@ jobs:
           sudo apt-get install -y build-essential bc bison flex libssl-dev \
                                   libncurses5-dev git clang lld libelf-dev make
 
-      - name: Clone Clang toolchain (ZyCromerZ Clang 18)
+      - name: Clone Proton Clang toolchain (recommended for Android kernel)
         run: |
-          git clone --depth=1 https://github.com/ZyCromerZ/Clang.git clang-18
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18
 
       - name: Build kernel
         run: |
@@ -31,6 +31,9 @@ jobs:
           export LD=ld.lld
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
+
+          # Optional: clean previous build
+          # make ARCH=$ARCH O=out mrproper
 
           make ARCH=$ARCH O=out lavender_defconfig
           make -j$(nproc) ARCH=$ARCH O=out \
@@ -45,7 +48,7 @@ jobs:
           name: Kernel-Image
           path: out/arch/arm64/boot/Image.gz-dtb
 
-      - name: Upload RTL8821AU driver module (optional)
+      - name: Upload RTL8821AU module
         if: success()
         uses: actions/upload-artifact@v4
         with:
