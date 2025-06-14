@@ -15,32 +15,29 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex \
-            libssl-dev libncurses5-dev git clang lld libelf-dev \
-            make zip cpio python3 kmod
+            libssl-dev libncurses5-dev git clang lld libelf-dev make zip
 
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18
 
-      - name: Patch Kernel Makefiles
+      - name: Patch kernel Makefiles
         run: |
           sed -i '/^obj-y\s\+=\s\+virt/d' Makefile
           sed -i '/^obj-y\s\+=\s\+gpu/d' drivers/Makefile
           sed -i '/^obj-y\s\+=\s\+sound/d' drivers/Makefile
 
-      - name: Set Build Environment Variables
+      - name: Build Kernel + RTL8821AU
         run: |
-          echo "CLANG_PATH=$GITHUB_WORKSPACE/clang-18/bin" >> $GITHUB_ENV
-          echo "PATH=$GITHUB_WORKSPACE/clang-18/bin:$PATH" >> $GITHUB_ENV
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "SUBARCH=arm64" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
-
-      - name: Kernel Configuration
-        run: |
-          make O=out lavender_defconfig
+          export CLANG_PATH=$PWD/clang-18/bin
+          export PATH=$CLANG_PATH:$PATH
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          rm -f $CLANG_PATH/ld || true
+          make ARCH=$ARCH O=out lavender_defconfig
           for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD DRM_RCAR FB \
                      CFB_FILLRECT FRAMEBUFFER_CONSOLE \
                      VIRT VIRTIO SOUND SND SND_SOC SND_USB_AUDIO \
@@ -51,17 +48,14 @@ jobs:
           for cfg in RTL8821AU USB_SUPPORT WLAN CFG80211; do
             scripts/config --file out/.config -m $cfg
           done
-          make O=out olddefconfig
-
-      - name: Build Kernel
-        run: |
-          make -j$(nproc) O=out \
+          make ARCH=$ARCH O=out olddefconfig
+          make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             LD=ld.lld
 
-      - name: Package Flashable Kernel (AnyKernel3 ZIP)
+      - name: Package Kernel Image (AnyKernel3 ZIP)
         run: |
           mkdir -p flashzip
           cp out/arch/arm64/boot/Image.gz-dtb flashzip/
@@ -73,7 +67,7 @@ jobs:
         run: |
           mkdir -p magisk-module/system/lib/modules
           cp out/drivers/net/wireless/rtl8821au/*.ko magisk-module/system/lib/modules/ || true
-
+          echo "RTL8821AU Magisk module" > magisk-module/README.md
           cat <<EOF > magisk-module/module.prop
 id=rtl8821au
 name=RTL8821AU WiFi Module
@@ -81,16 +75,13 @@ version=1.0
 author=GitHub Actions
 description=Injects rtl8821au.ko into system
 EOF
-
           cat <<'EOL' > magisk-module/install.sh
 #!/system/bin/sh
 MODDIR=${0%/*}
 mkdir -p /data/rtl8821au
 cp $MODDIR/system/lib/modules/*.ko /data/rtl8821au/
 chmod 644 /data/rtl8821au/*.ko
-insmod /data/rtl8821au/rtl8821au.ko
 EOL
-
           chmod +x magisk-module/install.sh
           cd magisk-module && zip -r9 ../RTL8821AU-Magisk.zip *
 
