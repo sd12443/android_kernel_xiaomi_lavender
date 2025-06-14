@@ -1,4 +1,4 @@
-name: Build Kernel and RTL8821AU Module
+name: Build Kernel and RTL8821AU Magisk Module
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev \
                                   libncurses5-dev git clang lld libelf-dev make zip \
-                                  python2 rsync
+                                  python2 python3 rsync
 
       - name: Clone Proton Clang toolchain
         run: |
@@ -34,23 +34,20 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
+          export LD=ld.lld
           export CLANG_TRIPLE=aarch64-linux-gnu-
-          export KBUILD_BUILD_USER=github-actions
-          export KBUILD_BUILD_HOST=github
           
-          # Remove conflicting ld symlink if exists
-          rm -f $CLANG_PATH/ld || true
-          
-          # Create out directory and load defconfig
+          # Clean and prepare
+          rm -rf out
           mkdir -p out
+          
+          # Configure kernel
           make ARCH=$ARCH O=out lavender_defconfig
+          scripts/config --file out/.config -m RTL8821AU -m CFG80211 -m MAC80211
+          make ARCH=$ARCH O=out olddefconfig
           
           # Build kernel
-          make -j$(nproc --all) ARCH=$ARCH O=out \
-              CC=clang \
-              CLANG_TRIPLE=aarch64-linux-gnu- \
-              CROSS_COMPILE=aarch64-linux-gnu- \
-              CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          make -j$(nproc --all) ARCH=$ARCH O=out
 
       - name: Build RTL8821AU driver
         run: |
@@ -59,7 +56,6 @@ jobs:
           export ARCH=arm64
           export KERNEL_SRC=$PWD
           export KERNEL_PATH=$PWD/out
-          export CROSS_COMPILE=aarch64-linux-gnu-
           
           # Clone driver source
           git clone https://github.com/aircrack-ng/rtl8812au.git
@@ -69,30 +65,70 @@ jobs:
           make -j$(nproc --all) ARCH=$ARCH \
               KSRC=$KERNEL_SRC \
               KERNEL_DIR=$KERNEL_PATH \
-              CROSS_COMPILE=$CROSS_COMPILE \
               CONFIG_RTL8812AU=m
-          
-          # Create Magisk module
+
+      - name: Create Magisk Module
+        run: |
+          # Create module structure
           mkdir -p magisk_module/system/lib/modules
-          cp 8812au.ko magisk_module/system/lib/modules/
+          cp rtl8812au/8812au.ko magisk_module/system/lib/modules/
           
-          # Create module.prop
-          echo "id=rtl8821au" > magisk_module/module.prop
-          echo "name=RTL8821AU Driver" >> magisk_module/module.prop
-          echo "version=v1.0" >> magisk_module/module.prop
-          echo "versionCode=1" >> magisk_module/module.prop
-          echo "author=GitHub Actions" >> magisk_module/module.prop
-          echo "description=RTL8821AU WiFi driver module" >> magisk_module/module.prop
+          # Create module files
+          cat > magisk_module/module.prop <<EOF
+          id=rtl8821au
+          name=RTL8821AU Driver
+          version=v1.0
+          versionCode=1
+          author=GitHub Actions
+          description=Magisk module for RTL8821AU WiFi driver
+          EOF
           
-          # Package module
+          cat > magisk_module/post-fs-data.sh <<EOF
+          #!/system/bin/sh
+          MODDIR=\${0%/*}
+          insmod \$MODDIR/system/lib/modules/8812au.ko
+          EOF
+          chmod +x magisk_module/post-fs-data.sh
+          
+          cat > magisk_module/service.sh <<EOF
+          #!/system/bin/sh
+          while [ "\$(getprop sys.boot_completed)" != "1" ]; do
+              sleep 1
+          done
+          insmod \$MODDIR/system/lib/modules/8812au.ko
+          EOF
+          chmod +x magisk_module/service.sh
+          
+          # Create update-binary
+          echo "#MAGISK" > magisk_module/META-INF/com/google/android/update-binary
+          cat > magisk_module/META-INF/com/google/android/updater-script <<EOF
+          ui_print("Installing RTL8821AU Driver");
+          set_perm_recursive(\$MODPATH/system/lib/modules 0 0 0755 0644);
+          EOF
+          
+          # Zip the module
           cd magisk_module
-          zip -r ../RTL8821AU-Magisk.zip *
-          cd ../..
+          zip -r9 ../RTL8821AU-Magisk.zip *
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: kernel-artifacts
+          name: Build-Artifacts
           path: |
             out/arch/arm64/boot/Image.gz-dtb
             RTL8821AU-Magisk.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: success()
+        with:
+          files: |
+            RTL8821AU-Magisk.zip
+          tag_name: magisk-module-$(date +%Y%m%d)
+          name: "RTL8821AU Magisk Module $(date +%Y-%m-%d)"
+          body: |-
+            Flashable Magisk module for RTL8821AU WiFi driver
+            Built from kernel source: $(git rev-parse --short HEAD)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
