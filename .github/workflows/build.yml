@@ -9,9 +9,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Attempt Repository Checkout
-        id: checkout
-        continue-on-error: true
+      - name: Checkout Kernel Headers
         uses: actions/checkout@v4
         with:
           repository: sd12443/android_kernel_xiaomi_lavender
@@ -22,68 +20,47 @@ jobs:
             arch/arm64/include/
             scripts/
             Makefile
-
-      - name: Fallback - Download Kernel Headers
-        if: steps.checkout.outcome == 'failure'
-        run: |
-          echo "Git checkout failed, downloading essential headers..."
-          mkdir -p kernel-headers/include/linux kernel-headers/arch/arm64/include/asm
-          
-          # Download minimal required headers
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/module.h -P kernel-headers/include/linux/
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/include/linux/kernel.h -P kernel-headers/include/linux/
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/arch/arm64/include/asm/barrier.h -P kernel-headers/arch/arm64/include/asm/
-          wget https://raw.githubusercontent.com/sd12443/android_kernel_xiaomi_lavender/master/Makefile -P kernel-headers/
-          
-          # Create placeholder files
-          touch kernel-headers/include/linux/compiler_types.h
-          touch kernel-headers/include/linux/compiler-gcc.h
-          touch kernel-headers/include/linux/types.h
-
-      - name: Verify Kernel Headers
-        run: |
-          if [ ! -f "kernel-headers/include/linux/module.h" ]; then
-            echo "::error::Essential kernel headers missing!"
-            exit 1
-          fi
-          echo "Kernel headers verified"
+            .config
 
       - name: Install Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc libssl-dev \
                                   git clang lld libelf-dev make zip \
-                                  wget
+                                  wget flex bison
 
       - name: Setup Proton Clang Toolchain
         run: |
-          # Clone Proton Clang with retry
-          for i in {1..3}; do
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain && break || sleep 10
-          done
-          
-          if [ ! -d "toolchain/bin" ]; then
-            echo "::error::Toolchain setup failed!"
-            exit 1
-          fi
-          
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
           echo "CLANG_PATH=$(pwd)/toolchain/bin" >> $GITHUB_ENV
           echo "PATH=$(pwd)/toolchain/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Prepare Kernel Headers
+        working-directory: ./kernel-headers
+        run: |
+          # Create minimal .config if missing
+          if [ ! -f ".config" ]; then
+            echo "CONFIG_MODULES=y" > .config
+            echo "CONFIG_RTL8821AU=m" >> .config
+          fi
+          
+          # Generate headers
+          make ARCH=arm64 scripts prepare
+
       - name: Build RTL8821AU Driver
         run: |
-          # Clone driver with retry
-          for i in {1..3}; do
-            git clone https://github.com/aircrack-ng/rtl8812au.git && break || sleep 10
-          done
-          
+          git clone https://github.com/aircrack-ng/rtl8812au.git
           cd rtl8812au
           
-          # Patch Makefile for header-only build
-          sed -i 's|^KERNEL_SRC =.*|KERNEL_SRC = $(shell pwd)/../kernel-headers|' Makefile
-          sed -i 's|^KERNEL_BUILD =.*|KERNEL_BUILD = $(KERNEL_SRC)|' Makefile
+          # Patch Makefile for Android kernel build
+          sed -i 's/^CONFIG_PLATFORM_I386_PC =.*/CONFIG_PLATFORM_I386_PC = n/' Makefile
+          sed -i 's/^CONFIG_PLATFORM_ARM64 =.*/CONFIG_PLATFORM_ARM64 = y/' Makefile
+          sed -i 's/-DCONFIG_.*_PLATFORM//' Makefile
           
+          # Build with proper kernel headers
           make ARCH=arm64 \
+               KSRC=../kernel-headers \
+               KERNEL_DIR=../kernel-headers \
                CC=clang \
                LD=ld.lld \
                CROSS_COMPILE=aarch64-linux-gnu- \
@@ -95,7 +72,7 @@ jobs:
           
           # Verify driver exists
           if [ ! -f "rtl8812au/8812au.ko" ]; then
-            echo "::error::Driver compilation failed - no output file!"
+            echo "::error::Driver compilation failed!"
             exit 1
           fi
           
