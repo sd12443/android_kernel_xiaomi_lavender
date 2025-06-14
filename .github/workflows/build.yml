@@ -61,7 +61,7 @@ jobs:
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             LD=ld.lld
 
-      - name: Package Flashable Kernel (AnyKernel3)
+      - name: Package Flashable Kernel (AnyKernel3 ZIP)
         run: |
           mkdir -p flashzip
           cp out/arch/arm64/boot/Image.gz-dtb flashzip/
