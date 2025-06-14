@@ -112,3 +112,4 @@ EOL
             RTL8821AU-Magisk.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
