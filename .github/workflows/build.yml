@@ -33,13 +33,10 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           rm -f $CLANG_PATH/ld || true
 
-          # Load correct defconfig
+          # Load defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # ✅ Disable config that causes defconfig error
-          scripts/config --file out/.config -d KERNEL_CONFIG_DATA
-
-          # Disable broken/unwanted subsystems
+          # Disable problematic configs (fixes build errors)
           scripts/config --file out/.config -d DRM
           scripts/config --file out/.config -d DRM_KMS_HELPER
           scripts/config --file out/.config -d FB
@@ -49,38 +46,38 @@ jobs:
           scripts/config --file out/.config -d SND_USB_AUDIO
           scripts/config --file out/.config -d FRAMEBUFFER_CONSOLE
           scripts/config --file out/.config -d HSI
+          scripts/config --file out/.config -d IKCONFIG
+          scripts/config --file out/.config -d IKCONFIG_PROC
+          scripts/config --file out/.config -d KERNEL_CONFIG_DATA
 
-          # Ensure RTL8821AU + USB is modular
+          # Enable modules we want
           scripts/config --file out/.config -m RTL8821AU
           scripts/config --file out/.config -m USB_SUPPORT
           scripts/config --file out/.config -m WLAN
           scripts/config --file out/.config -m CFG80211
 
-          # Apply updated config
+          # Finalize config
           make ARCH=$ARCH O=out olddefconfig
 
-          # Build kernel
+          # Build the kernel (disable config blob explicitly)
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
-            LD=ld.lld
+            LD=ld.lld \
+            CONFIG_KERNEL_CONFIG_DATA=n
 
       - name: Package with AnyKernel3
         run: |
           mkdir -p flashzip
-          cp out/arch/arm64/boot/Image.gz-dtb flashzip/ || echo "Image not found"
-          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "Module not found"
-          cp -r .anykernel/* flashzip/ || echo "Anykernel folder missing"
+          cp out/arch/arm64/boot/Image.gz-dtb flashzip/
+          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/
+          cp -r .anykernel/* flashzip/
           echo "Custom kernel with RTL8821AU" > flashzip/README.txt
-          cd flashzip && zip -r9 ../Kernel-flashable.zip *
+          cd flashzip
+          zip -r9 ../Kernel-flashable.zip *
 
-      - name: "Debug: List contents before upload"
-
-        run: |
-          ls -lh Kernel-flashable.zip || echo "ZIP not created"
-
-      - name: Upload flashable zip
+      - name: Upload flashable zip to Actions
         uses: actions/upload-artifact@v4
         with:
           name: Flashable-Zip
