@@ -6,71 +6,80 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex \
             libssl-dev libncurses5-dev git clang lld libelf-dev make zip
 
-      - name: Clone Proton Clang toolchain
+      - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-18
 
-      - name: Build kernel + RTL8821AU
+      - name: Build Kernel with RTL8821AU
         run: |
           export CLANG_PATH=$PWD/clang-18/bin
           export PATH=$CLANG_PATH:$PATH
-          export ARCH=arm64 SUBARCH=arm64
+          export ARCH=arm64
+          export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
 
+          # 🧹 Clean old linker
           rm -f $CLANG_PATH/ld || true
+
+          # 🛠 Load defconfig
           make ARCH=$ARCH O=out lavender_defconfig
 
-          # Disable subsystems causing ld errors
+          # 🧱 Disable problematic drivers
           for cfg in DRM DRM_KMS_HELPER I915 DRM_AMD DRM_RCAR FB \
-             CFB_FILLRECT FRAMEBUFFER_CONSOLE VIRT VIRTIO \
-             SOUND SND SND_SOC SND_USB_AUDIO \
-             HSI IKCONFIG IKCONFIG_PROC KERNEL_CONFIG_DATA; do
+                     CFB_FILLRECT FRAMEBUFFER_CONSOLE \
+                     VIRT VIRTIO SOUND SND SND_SOC SND_USB_AUDIO \
+                     HSI IKCONFIG IKCONFIG_PROC KERNEL_CONFIG_DATA \
+                     MSM_KGSL MSM_KGSL_IOMMU; do
             scripts/config --file out/.config -d $cfg
           done
 
-          # Enable WiFi modules
+          # ✅ Enable required WiFi modules
           for cfg in RTL8821AU USB_SUPPORT WLAN CFG80211; do
             scripts/config --file out/.config -m $cfg
           done
 
+          # ✔ Update kernel config
           make ARCH=$ARCH O=out olddefconfig
 
+          # 🏗 Build kernel
           make -j$(nproc) ARCH=$ARCH O=out \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             LD=ld.lld
 
-      - name: Package kernel
+      - name: Package with AnyKernel3
         run: |
-          mkdir flashzip
+          mkdir -p flashzip
           cp out/arch/arm64/boot/Image.gz-dtb flashzip/ || exit 1
-          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "No module"
-          cp -r .anykernel/* flashzip/ || echo "No AnyKernel3"
-          echo "Kernel w/ RTL8821AU" > flashzip/README.txt
+          cp out/drivers/net/wireless/rtl8821au/*.ko flashzip/ || echo "No .ko module found"
+          cp -r .anykernel/* flashzip/ || echo "No AnyKernel3 template found"
+          echo "Built kernel with RTL8821AU" > flashzip/README.txt
           cd flashzip && zip -r9 ../Kernel-flashable.zip *
 
-      - name: Verify archive
-        run: ls -lh Kernel-flashable.zip
+      - name: Check ZIP
+        run: ls -lh Kernel-flashable.zip || (echo "Missing ZIP" && exit 1)
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Flashable-Kernel-Zip
           path: Kernel-flashable.zip
 
-      - name: Release on GitHub
+      - name: Upload to GitHub Release
         if: success()
         uses: softprops/action-gh-release@v1
         with:
